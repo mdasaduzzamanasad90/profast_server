@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { default: Stripe } = require("stripe");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -9,6 +10,7 @@ const port = process.env.PORT || 3000;
 // ===== Middlewares =====
 app.use(cors());
 app.use(express.json());
+const stripe = new Stripe(process.env.SECRET_KEY);
 
 // ===== MongoDB Connection URI =====
 const uri = `mongodb+srv://${process.env.USER_NAME}:${process.env.USER_PASS}@cluster0.tobpnew.mongodb.net/?appName=Cluster0`;
@@ -149,6 +151,23 @@ async function run() {
           message: "Failed to fetch parcel by ID",
           error: error.message,
         });
+      }
+    });
+
+    // Payment system
+    app.post("/create-payment-intent", async (req, res) => {
+      try {
+        const { coinamount } = req.body;
+
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: coinamount,
+          currency: "bdt",
+          payment_method_types: ["card"],
+        });
+
+        res.json({ clientSecret: paymentIntent.client_secret });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
       }
     });
 
