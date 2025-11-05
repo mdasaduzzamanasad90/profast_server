@@ -28,9 +28,9 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     await client.connect();
-
-    const dataBaseParcels = client.db("profast").collection("parcels");
-
+    const dataBase = client.db("profast");
+    const dataBaseParcels = dataBase.collection("parcels");
+    const dataBasePayments = dataBase.collection("payments");
     // Create index for trackingId
     await dataBaseParcels.createIndex({ trackingId: 1 }, { unique: true });
 
@@ -168,6 +168,96 @@ async function run() {
         res.json({ clientSecret: paymentIntent.client_secret });
       } catch (err) {
         res.status(500).json({ error: err.message });
+      }
+    });
+
+    // ✅ Update Parcel Payment Status by _id
+    app.patch("/parcels/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { paymentStatus } = req.body;
+
+        if (!id || !paymentStatus) {
+          return res
+            .status(400)
+            .json({ success: false, message: "ID and paymentStatus required" });
+        }
+
+        const result = await dataBaseParcels.updateOne(
+          { _id: new ObjectId(id) }, // _id দিয়ে document চিহ্নিত করা
+          { $set: { paymentStatus } } // শুধু paymentStatus আপডেট হবে
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "Parcel not found",
+          });
+        }
+
+        res.json({
+          success: true,
+          message: "Payment status updated successfully",
+          modifiedCount: result.modifiedCount,
+        });
+      } catch (err) {
+        console.error("Error updating parcel status:", err);
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
+    // ---------------------------------------------
+    // 💾 Save Payment info
+    // ---------------------------------------------
+    app.post("/payment-history", async (req, res) => {
+      try {
+        const { trackingId, userEmail, amount, transactionId, status } =
+          req.body;
+
+        if (!trackingId || !userEmail || !transactionId) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Missing required fields" });
+        }
+
+        const paymentDoc = {
+          trackingId,
+          userEmail,
+          amount,
+          transactionId,
+          status,
+          createdAt: new Date().toISOString(),
+        };
+
+        const result = await dataBasePayments.insertOne(paymentDoc);
+        res.json({ success: true, data: result });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: err.message });
+      }
+    });
+
+    // ---------------------------------------------
+    // 📜 Get User Payment History
+    // ---------------------------------------------
+    app.get("/payment-history", async (req, res) => {
+      try {
+        const email = req.query.email;
+        if (!email) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Email required" });
+        }
+
+        const payments = await dataBasePayments
+          .find({ userEmail: email })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.json({ success: true, data: payments });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: err.message });
       }
     });
 
